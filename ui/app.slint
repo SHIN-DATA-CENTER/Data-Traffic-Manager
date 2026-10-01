@@ -1,0 +1,831 @@
+import { Button, ComboBox, ListView, Palette, SpinBox, Switch } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Icon } from "icons.slint";
+import { InterfaceItem, Detail, GraphPoint, DayBar, MonthRow } from "types.slint";
+import { RateGraph, DailyChart } from "charts.slint";
+import { Card, SectionTitle, LegendKey, StatusDot, KindBadge, IconButton, InterfaceListItem, RateTile, StatTile, SegmentedTabs, Meter } from "widgets.slint";
+
+export { InterfaceItem, Detail, GraphPoint, DayBar, MonthRow }
+
+component SettingRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> description;
+    spacing: 16px;
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: center;
+        spacing: 2px;
+        Text {
+            text: root.label;
+            color: Theme.text-primary;
+            font-size: 13px;
+            wrap: word-wrap;
+        }
+        if root.description != "": Text {
+            text: root.description;
+            color: Theme.text-muted;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        @children
+    }
+}
+
+component Overlay inherits Rectangle {
+    callback dismiss;
+    background: #00000066;
+    TouchArea {
+        clicked => { root.dismiss(); }
+    }
+    @children
+}
+
+component MonitorPage inherits VerticalLayout {
+    in property <Detail> detail;
+    in property <[GraphPoint]> graph-points;
+    spacing: 12px;
+
+    HorizontalLayout {
+        spacing: 12px;
+        RateTile {
+            horizontal-stretch: 1;
+            title: "受信（ダウンロード）";
+            icon: "down";
+            series-color: Theme.rx;
+            value: root.detail.rx-rate;
+            peak: root.detail.rx-peak;
+        }
+        RateTile {
+            horizontal-stretch: 1;
+            title: "送信（アップロード）";
+            icon: "up";
+            series-color: Theme.tx;
+            value: root.detail.tx-rate;
+            peak: root.detail.tx-peak;
+        }
+    }
+
+    Card {
+        vertical-stretch: 1;
+        min-height: 170px;
+        VerticalLayout {
+            padding: 14px;
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 16px;
+                SectionTitle { text: "リアルタイム"; }
+                Text {
+                    text: root.detail.graph-span;
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                HorizontalLayout {
+                    spacing: 14px;
+                    horizontal-stretch: 0;
+                    LegendKey { color: Theme.rx; text: "受信"; }
+                    LegendKey { color: Theme.tx; text: "送信"; }
+                }
+            }
+            RateGraph {
+                vertical-stretch: 1;
+                rx-area: root.detail.graph-rx-area;
+                rx-line: root.detail.graph-rx-line;
+                tx-area: root.detail.graph-tx-area;
+                tx-line: root.detail.graph-tx-line;
+                viewbox-width: root.detail.graph-viewbox-width;
+                max-label: root.detail.graph-max;
+                mid-label: root.detail.graph-mid;
+                span-label: root.detail.graph-start;
+                points: root.graph-points;
+            }
+        }
+        if root.detail.status == "absent": Rectangle {
+            width: absent-text.preferred-width + 32px;
+            height: absent-text.preferred-height + 20px;
+            border-radius: 6px;
+            background: Theme.surface-raised;
+            border-width: 1px;
+            border-color: Theme.border;
+            absent-text := Text {
+                text: "このインターフェースは現在接続されていません。\n過去の通信量は「使用量の履歴」タブで確認できます。";
+                color: Theme.text-secondary;
+                font-size: 12px;
+                horizontal-alignment: center;
+            }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+        StatTile {
+            horizontal-stretch: 1;
+            title: "このセッション";
+            traffic: root.detail.session;
+            note: "アプリ起動後の通信量";
+        }
+        StatTile {
+            horizontal-stretch: 1;
+            title: "今日";
+            traffic: root.detail.today;
+        }
+        StatTile {
+            horizontal-stretch: 1;
+            title: "今期 · " + root.detail.period-label;
+            traffic: root.detail.period;
+            note: root.detail.forecast;
+        }
+    }
+}
+
+component HistoryPage inherits VerticalLayout {
+    in property <Detail> detail;
+    in property <[DayBar]> days;
+    in property <[MonthRow]> months;
+    in-out property <int> limit-edit;
+    callback limit-changed(int);
+    callback delete-requested();
+    spacing: 12px;
+
+    Card {
+        vertical-stretch: 1;
+        min-height: 180px;
+        VerticalLayout {
+            padding: 14px;
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 16px;
+                SectionTitle { text: "日別の使用量"; }
+                Text {
+                    text: "直近 30 日";
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                HorizontalLayout {
+                    spacing: 14px;
+                    horizontal-stretch: 0;
+                    LegendKey { color: Theme.rx; text: "受信"; }
+                    LegendKey { color: Theme.tx; text: "送信"; }
+                }
+            }
+            DailyChart {
+                vertical-stretch: 1;
+                bars: root.days;
+                max-label: root.detail.days-max;
+                mid-label: root.detail.days-mid;
+            }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+        vertical-stretch: 1;
+        min-height: 200px;
+
+        Card {
+            horizontal-stretch: 1;
+            VerticalLayout {
+                padding: 14px;
+                spacing: 10px;
+                SectionTitle { text: "月間の上限"; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: root.detail.period.total;
+                        color: Theme.text-primary;
+                        font-size: 20px;
+                        font-weight: 600;
+                    }
+                    Text {
+                        text: "今期 · " + root.detail.period-label;
+                        color: Theme.text-secondary;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                }
+                if root.detail.limit-gb > 0: Meter {
+                    ratio: root.detail.limit-ratio;
+                    level: root.detail.limit-level;
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    if root.detail.limit-level > 0: Icon {
+                        name: "warning";
+                        width: 14px;
+                        height: 14px;
+                        color: root.detail.limit-level == 2 ? Theme.critical : Theme.warning;
+                        y: (parent.height - self.height) / 2;
+                    }
+                    Text {
+                        text: root.detail.limit-text;
+                        color: Theme.text-secondary;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                        horizontal-stretch: 1;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    SpinBox {
+                        width: 130px;
+                        minimum: 0;
+                        maximum: 100000;
+                        value <=> root.limit-edit;
+                        edited(value) => { root.limit-changed(value); }
+                    }
+                    Text {
+                        text: "GB（0 で上限なし）";
+                        color: Theme.text-secondary;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        Text {
+                            text: "累計 " + root.detail.all-time.total;
+                            color: Theme.text-secondary;
+                            font-size: 12px;
+                        }
+                        Text {
+                            text: root.detail.all-time-since;
+                            color: Theme.text-muted;
+                            font-size: 11px;
+                        }
+                    }
+                    Button {
+                        text: "履歴を削除";
+                        clicked => { root.delete-requested(); }
+                    }
+                }
+            }
+        }
+
+        Card {
+            horizontal-stretch: 1;
+            VerticalLayout {
+                padding-top: 14px;
+                padding-bottom: 6px;
+                spacing: 6px;
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    SectionTitle { text: "月別の使用量"; horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    spacing: 8px;
+                    Text { text: "期間"; color: Theme.text-muted; font-size: 11px; horizontal-stretch: 1; }
+                    Text { text: "受信"; color: Theme.text-muted; font-size: 11px; width: 68px; horizontal-alignment: right; }
+                    Text { text: "送信"; color: Theme.text-muted; font-size: 11px; width: 68px; horizontal-alignment: right; }
+                    Text { text: "合計"; color: Theme.text-muted; font-size: 11px; width: 72px; horizontal-alignment: right; }
+                }
+                ListView {
+                    vertical-stretch: 1;
+                    for month in root.months: Rectangle {
+                        height: 34px;
+                        HorizontalLayout {
+                            padding-left: 14px;
+                            padding-right: 14px;
+                            spacing: 8px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 3px;
+                                Text {
+                                    text: month.label;
+                                    color: Theme.text-primary;
+                                    font-size: 12px;
+                                    font-weight: month.current ? 600 : 400;
+                                    overflow: elide;
+                                }
+                                Rectangle {
+                                    height: 3px;
+                                    Rectangle {
+                                        x: 0px;
+                                        width: parent.width * month.ratio;
+                                        border-radius: 1.5px;
+                                        background: Theme.magnitude;
+                                    }
+                                }
+                            }
+                            Text { text: month.rx; color: Theme.text-secondary; font-size: 12px; width: 68px; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: month.tx; color: Theme.text-secondary; font-size: 12px; width: 68px; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: month.total; color: Theme.text-primary; font-size: 12px; width: 72px; horizontal-alignment: right; vertical-alignment: center; }
+                        }
+                        Rectangle {
+                            x: 14px;
+                            y: parent.height - 1px;
+                            width: parent.width - 28px;
+                            height: 1px;
+                            background: Theme.grid;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Data Traffic Manager";
+    icon: @image-url("../assets/icon.png");
+    preferred-width: 1100px;
+    preferred-height: 740px;
+    min-width: 860px;
+    min-height: 600px;
+    background: Theme.page;
+    default-font-family: root.font-family;
+
+    in property <string> font-family;
+    in property <string> version;
+    in property <string> data-dir;
+    in property <string> error-text;
+    // Errors caused by a user action; shown until dismissed.
+    in-out property <string> notice-text;
+    in property <[InterfaceItem]> interfaces;
+    in property <Detail> detail;
+    in property <[GraphPoint]> graph-points;
+    in property <[DayBar]> days;
+    in property <[MonthRow]> months;
+
+    // Settings (initialised from Rust, edited by the user).
+    in-out property <int> interval-index: 1;
+    in-out property <int> unit-index: 0;
+    in-out property <bool> show-hidden;
+    in-out property <int> billing-day: 1;
+    in-out property <bool> count-offline: true;
+    in-out property <bool> keep-in-tray;
+    // 0 = follow the system, 1 = light, 2 = dark.
+    in-out property <int> theme-index;
+    in-out property <bool> autostart;
+    in property <bool> autostart-supported;
+    // Monthly limit editor of the selected interface.
+    in-out property <int> limit-edit;
+    in-out property <string> limit-key;
+
+    callback select-interface(string);
+    callback interval-changed(int);
+    callback unit-changed(int);
+    callback show-hidden-changed(bool);
+    callback billing-day-changed(int);
+    callback count-offline-changed(bool);
+    callback keep-in-tray-changed(bool);
+    callback theme-changed(int);
+    callback autostart-changed(bool);
+    callback limit-changed(string, int);
+    callback reset-session();
+    callback delete-history(string);
+    callback open-data-dir();
+
+    private property <ColorScheme> system-scheme;
+    private property <int> applied-theme: 0;
+
+    changed theme-index => {
+        // Remember the system scheme before overriding it, so "follow the
+        // system" can be restored without a restart.
+        if root.applied-theme == 0 {
+            root.system-scheme = Palette.color-scheme;
+        }
+        Palette.color-scheme = root.theme-index == 1 ? ColorScheme.light : root.theme-index == 2 ? ColorScheme.dark : root.system-scheme;
+        root.applied-theme = root.theme-index;
+    }
+
+    private property <int> tab: 0;
+    private property <bool> settings-open: false;
+    private property <bool> confirm-delete: false;
+
+    VerticalLayout {
+        // Header
+        Rectangle {
+            height: 56px;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 12px;
+                spacing: 12px;
+                Image {
+                    source: @image-url("../assets/icon-64.png");
+                    width: 28px;
+                    height: 28px;
+                    y: (parent.height - self.height) / 2;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: "Data Traffic Manager";
+                        color: Theme.text-primary;
+                        font-size: 16px;
+                        font-weight: 600;
+                    }
+                    Text {
+                        text: "ネットワークアダプターの通信量モニター";
+                        color: Theme.text-muted;
+                        font-size: 11px;
+                    }
+                }
+                IconButton {
+                    icon: "settings";
+                    tooltip: "設定";
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.settings-open = true; }
+                }
+            }
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
+        }
+
+        if root.error-text != "" || root.notice-text != "": Rectangle {
+            background: Theme.critical.transparentize(0.85);
+            HorizontalLayout {
+                padding: 6px;
+                padding-left: 20px;
+                spacing: 8px;
+                Icon { name: "warning"; width: 16px; height: 16px; color: Theme.critical; y: (parent.height - self.height) / 2; }
+                Text {
+                    text: root.error-text != "" ? root.error-text : root.notice-text;
+                    color: Theme.text-primary;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                if root.error-text == "": IconButton {
+                    icon: "close";
+                    tooltip: "閉じる";
+                    width: 26px;
+                    height: 26px;
+                    clicked => { root.notice-text = ""; }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            padding: 16px;
+            spacing: 16px;
+            vertical-stretch: 1;
+
+            // Interface list
+            Card {
+                width: 320px;
+                VerticalLayout {
+                    padding-top: 14px;
+                    padding-bottom: 10px;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        SectionTitle { text: "インターフェース"; horizontal-stretch: 1; }
+                        Text {
+                            text: root.interfaces.length;
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                    }
+                    if root.interfaces.length == 0: Text {
+                        text: "表示できるインターフェースがありません";
+                        color: Theme.text-muted;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-stretch: 1;
+                        vertical-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    if root.interfaces.length > 0: ListView {
+                        vertical-stretch: 1;
+                        for item in root.interfaces: Rectangle {
+                            height: 80px;
+                            InterfaceListItem {
+                                x: 6px;
+                                y: 2px;
+                                width: parent.width - 12px;
+                                item: item;
+                                clicked => { root.select-interface(item.key); }
+                            }
+                        }
+                    }
+                    Rectangle { height: 1px; background: Theme.grid; }
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        Switch {
+                            text: "非表示のインターフェースも表示";
+                            checked <=> root.show-hidden;
+                            toggled => { root.show-hidden-changed(self.checked); }
+                        }
+                    }
+                }
+            }
+
+            // Details
+            if !root.detail.valid: Card {
+                horizontal-stretch: 1;
+                Text {
+                    text: "インターフェースを選択してください";
+                    color: Theme.text-muted;
+                    font-size: 14px;
+                }
+            }
+            if root.detail.valid: VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 12px;
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    KindBadge {
+                        kind: root.detail.kind;
+                        status: root.detail.status;
+                        size: 44px;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 10px;
+                            alignment: start;
+                            Text {
+                                text: root.detail.name;
+                                color: Theme.text-primary;
+                                font-size: 20px;
+                                font-weight: 600;
+                                overflow: elide;
+                            }
+                            Rectangle {
+                                height: 22px;
+                                y: (parent.height - self.height) / 2;
+                                width: status-row.preferred-width + 16px;
+                                border-radius: 11px;
+                                background: Theme.hover;
+                                status-row := HorizontalLayout {
+                                    padding-left: 8px;
+                                    padding-right: 8px;
+                                    spacing: 6px;
+                                    StatusDot {
+                                        status: root.detail.status;
+                                        width: 8px;
+                                        height: 8px;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+                                    Text {
+                                        text: root.detail.status-label;
+                                        color: Theme.text-secondary;
+                                        font-size: 11px;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                height: 22px;
+                                y: (parent.height - self.height) / 2;
+                                width: kind-text.preferred-width + 16px;
+                                border-radius: 11px;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                kind-text := Text {
+                                    text: root.detail.kind-label;
+                                    color: Theme.text-secondary;
+                                    font-size: 11px;
+                                }
+                            }
+                        }
+                        Text {
+                            text: root.detail.link-speed == "—" ? root.detail.description : root.detail.description + "  ·  リンク速度 " + root.detail.link-speed;
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                            overflow: elide;
+                        }
+                    }
+                    SegmentedTabs {
+                        y: (parent.height - self.height) / 2;
+                        tabs: ["モニター", "使用量の履歴"];
+                        current <=> root.tab;
+                    }
+                }
+
+                if root.tab == 0: MonitorPage {
+                    vertical-stretch: 1;
+                    detail: root.detail;
+                    graph-points: root.graph-points;
+                }
+                if root.tab == 1: HistoryPage {
+                    vertical-stretch: 1;
+                    detail: root.detail;
+                    days: root.days;
+                    months: root.months;
+                    limit-edit <=> root.limit-edit;
+                    limit-changed(gb) => { root.limit-changed(root.detail.key, gb); }
+                    delete-requested => { root.confirm-delete = true; }
+                }
+            }
+        }
+    }
+
+    // Settings dialog
+    if root.settings-open: Overlay {
+        dismiss => { root.settings-open = false; }
+        Card {
+            width: Math.min(520px, root.width - 48px);
+            height: Math.min(settings-layout.preferred-height, root.height - 48px);
+            background: Theme.surface-raised;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000044;
+            // Swallow clicks so they do not close the dialog.
+            TouchArea { }
+            settings-layout := VerticalLayout {
+                padding: 20px;
+                spacing: 14px;
+                HorizontalLayout {
+                    Text {
+                        text: "設定";
+                        color: Theme.text-primary;
+                        font-size: 18px;
+                        font-weight: 600;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                    IconButton {
+                        icon: "close";
+                        tooltip: "閉じる";
+                        clicked => { root.settings-open = false; }
+                    }
+                }
+                SettingRow {
+                    label: "更新間隔";
+                    ComboBox {
+                        width: 180px;
+                        model: ["0.5 秒", "1 秒", "2 秒", "5 秒"];
+                        current-index <=> root.interval-index;
+                        selected => { root.interval-changed(self.current-index); }
+                    }
+                }
+                SettingRow {
+                    label: "速度の単位";
+                    ComboBox {
+                        width: 180px;
+                        model: ["バイト/秒 (MB/s)", "ビット/秒 (Mbps)"];
+                        current-index <=> root.unit-index;
+                        selected => { root.unit-changed(self.current-index); }
+                    }
+                }
+                SettingRow {
+                    label: "テーマ";
+                    ComboBox {
+                        width: 180px;
+                        model: ["システム設定に合わせる", "ライト", "ダーク"];
+                        current-index <=> root.theme-index;
+                        selected => { root.theme-changed(self.current-index); }
+                    }
+                }
+                SettingRow {
+                    label: "集計期間の開始日";
+                    description: "毎月この日から 1 か月を「今期」として集計します（契約の締め日に合わせられます）";
+                    SpinBox {
+                        width: 110px;
+                        minimum: 1;
+                        maximum: 28;
+                        value <=> root.billing-day;
+                        edited(value) => { root.billing-day-changed(value); }
+                    }
+                }
+                SettingRow {
+                    label: "アプリ停止中の通信量も集計する";
+                    description: "次回起動時にアダプターのカウンターから停止中の通信量を求め、その日の使用量に加算します";
+                    Switch {
+                        checked <=> root.count-offline;
+                        toggled => { root.count-offline-changed(self.checked); }
+                    }
+                }
+                SettingRow {
+                    label: "閉じてもタスクトレイで計測を続ける";
+                    description: "ウィンドウを閉じるとタスクトレイに格納されます。終了はトレイアイコンのメニューから";
+                    Switch {
+                        checked <=> root.keep-in-tray;
+                        toggled => { root.keep-in-tray-changed(self.checked); }
+                    }
+                }
+                if root.autostart-supported: SettingRow {
+                    label: "Windows のサインイン時に起動する";
+                    description: "タスクトレイに格納された状態で起動します";
+                    Switch {
+                        checked <=> root.autostart;
+                        toggled => { root.autostart-changed(self.checked); }
+                    }
+                }
+                Rectangle { height: 1px; background: Theme.grid; }
+                SettingRow {
+                    label: "データの保存先";
+                    description: root.data-dir;
+                    Button {
+                        text: "フォルダーを開く";
+                        clicked => { root.open-data-dir(); }
+                    }
+                }
+                SettingRow {
+                    label: "このセッションの統計をリセット";
+                    description: "「このセッション」の通信量と最大速度を 0 に戻します（履歴は消えません）";
+                    Button {
+                        text: "リセット";
+                        clicked => { root.reset-session(); }
+                    }
+                }
+                Text {
+                    text: "Data Traffic Manager " + root.version;
+                    color: Theme.text-muted;
+                    font-size: 11px;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+    }
+
+    // Delete confirmation
+    if root.confirm-delete: Overlay {
+        dismiss => { root.confirm-delete = false; }
+        Card {
+            width: Math.min(440px, root.width - 48px);
+            height: confirm-layout.preferred-height;
+            background: Theme.surface-raised;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000044;
+            TouchArea { }
+            confirm-layout := VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+                Text {
+                    text: "使用量の履歴を削除しますか？";
+                    color: Theme.text-primary;
+                    font-size: 16px;
+                    font-weight: 600;
+                }
+                Text {
+                    text: "「" + root.detail.name + "」の日別・月別の使用量と月間上限の設定を削除します。この操作は元に戻せません。";
+                    color: Theme.text-secondary;
+                    font-size: 13px;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    Button {
+                        text: "キャンセル";
+                        clicked => { root.confirm-delete = false; }
+                    }
+                    Button {
+                        text: "削除する";
+                        primary: true;
+                        clicked => {
+                            root.confirm-delete = false;
+                            root.delete-history(root.detail.key);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Notification-area icon. Created separately from the window by Rust.
+export component AppTray inherits SystemTrayIcon {
+    in property <bool> active: true;
+    in property <string> tip: "Data Traffic Manager";
+    callback show-window();
+    callback quit();
+
+    icon: @image-url("../assets/icon-32.png");
+    tooltip: root.tip;
+    title: "Data Traffic Manager";
+    visible: root.active;
+    clicked => { root.show-window(); }
+
+    Menu {
+        MenuItem {
+            title: "ウィンドウを表示";
+            activated => { root.show-window(); }
+        }
+        MenuSeparator { }
+        MenuItem {
+            title: "終了";
+            activated => { root.quit(); }
+        }
+    }
+}
