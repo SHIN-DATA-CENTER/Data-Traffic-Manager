@@ -1,0 +1,284 @@
+import { Theme } from "theme.slint";
+import { GraphPoint, DayBar } from "types.slint";
+
+// Small tooltip bubble.
+component Tooltip inherits Rectangle {
+    in property <string> text;
+    background: Theme.surface-raised;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Theme.border;
+    drop-shadow-blur: 8px;
+    drop-shadow-offset-y: 2px;
+    drop-shadow-color: #0000002e;
+    width: label.preferred-width + 20px;
+    height: label.preferred-height + 12px;
+    label := Text {
+        x: 10px;
+        y: 6px;
+        text: root.text;
+        color: Theme.text-primary;
+        font-size: 12px;
+    }
+}
+
+// Live receive/transmit rate graph with a hover crosshair.
+export component RateGraph inherits Rectangle {
+    in property <string> rx-area;
+    in property <string> rx-line;
+    in property <string> tx-area;
+    in property <string> tx-line;
+    in property <float> viewbox-width: 1;
+    in property <string> max-label;
+    in property <string> mid-label;
+    in property <string> span-label;
+    in property <[GraphPoint]> points;
+
+    private property <length> axis-width: 72px;
+    private property <length> pad-top: 8px;
+    private property <length> pad-bottom: 22px;
+    private property <length> plot-x: self.axis-width;
+    private property <length> plot-y: self.pad-top;
+    private property <length> plot-width: Math.max(1px, self.width - self.axis-width - 4px);
+    private property <length> plot-height: Math.max(1px, self.height - self.pad-top - self.pad-bottom);
+    private property <int> hover-index: Math.clamp(Math.round(touch.mouse-x / self.plot-width * (self.points.length - 1)), 0, Math.max(0, self.points.length - 1));
+    private property <length> cross-x: self.points.length > 1 ? 1px + (self.plot-width - 2px) * self.hover-index / (self.points.length - 1) : 0px;
+    private property <GraphPoint> hovered: self.points[self.hover-index];
+
+    // Grid lines and labels.
+    for line[i] in [0, 0.5, 1]: Rectangle {
+        x: root.plot-x;
+        y: root.plot-y + root.plot-height * line - (i == 2 ? 1px : 0px);
+        width: root.plot-width;
+        height: 1px;
+        background: i == 2 ? Theme.baseline : Theme.grid;
+    }
+    for label[i] in [root.max-label, root.mid-label, "0"]: Text {
+        x: 0px;
+        width: root.axis-width - 10px;
+        y: root.plot-y + root.plot-height * i / 2 - self.height / 2;
+        text: label;
+        color: Theme.text-muted;
+        font-size: 11px;
+        horizontal-alignment: right;
+    }
+    Text {
+        x: root.plot-x;
+        y: root.plot-y + root.plot-height + 6px;
+        text: root.span-label;
+        color: Theme.text-muted;
+        font-size: 11px;
+    }
+    Text {
+        x: root.plot-x + root.plot-width - self.width;
+        y: root.plot-y + root.plot-height + 6px;
+        text: "現在";
+        color: Theme.text-muted;
+        font-size: 11px;
+    }
+
+    Rectangle {
+        x: root.plot-x;
+        y: root.plot-y;
+        width: root.plot-width;
+        height: root.plot-height;
+
+        // Area washes first, then lines on top. The areas use the same
+        // stroke width (transparent) so they are fitted exactly like the lines.
+        Path {
+            viewbox-x: 0; viewbox-y: 0;
+            viewbox-width: root.viewbox-width; viewbox-height: 100;
+            fit: ImageFit.fill;
+            commands: root.rx-area;
+            fill: Theme.rx.transparentize(0.88);
+            stroke: transparent;
+            stroke-width: 2px;
+        }
+        Path {
+            viewbox-x: 0; viewbox-y: 0;
+            viewbox-width: root.viewbox-width; viewbox-height: 100;
+            fit: ImageFit.fill;
+            commands: root.tx-area;
+            fill: Theme.tx.transparentize(0.88);
+            stroke: transparent;
+            stroke-width: 2px;
+        }
+        Path {
+            viewbox-x: 0; viewbox-y: 0;
+            viewbox-width: root.viewbox-width; viewbox-height: 100;
+            fit: ImageFit.fill;
+            commands: root.tx-line;
+            fill: transparent;
+            stroke: Theme.tx;
+            stroke-width: 2px;
+            stroke-line-join: round;
+            stroke-line-cap: round;
+        }
+        Path {
+            viewbox-x: 0; viewbox-y: 0;
+            viewbox-width: root.viewbox-width; viewbox-height: 100;
+            fit: ImageFit.fill;
+            commands: root.rx-line;
+            fill: transparent;
+            stroke: Theme.rx;
+            stroke-width: 2px;
+            stroke-line-join: round;
+            stroke-line-cap: round;
+        }
+
+        touch := TouchArea { }
+
+        if touch.has-hover && root.points.length > 1: Rectangle {
+            x: root.cross-x;
+            width: 1px;
+            background: Theme.baseline;
+        }
+        if touch.has-hover && root.points.length > 1: Rectangle {
+            x: root.cross-x - self.width / 2;
+            y: 1px + (root.plot-height - 2px) * (1 - root.hovered.tx) - self.height / 2;
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background: Theme.tx;
+            border-width: 2px;
+            border-color: Theme.surface;
+        }
+        if touch.has-hover && root.points.length > 1: Rectangle {
+            x: root.cross-x - self.width / 2;
+            y: 1px + (root.plot-height - 2px) * (1 - root.hovered.rx) - self.height / 2;
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background: Theme.rx;
+            border-width: 2px;
+            border-color: Theme.surface;
+        }
+        if touch.has-hover && root.points.length > 1: Tooltip {
+            text: root.hovered.label;
+            x: root.cross-x + 12px + self.width > root.plot-width ? root.cross-x - 12px - self.width : root.cross-x + 12px;
+            y: 6px;
+        }
+    }
+}
+
+// Stacked daily usage columns (received at the bottom, sent on top).
+export component DailyChart inherits Rectangle {
+    in property <[DayBar]> bars;
+    in property <string> max-label;
+    in property <string> mid-label;
+
+    private property <length> axis-width: 72px;
+    private property <length> pad-top: 8px;
+    private property <length> pad-bottom: 22px;
+    private property <length> plot-x: self.axis-width;
+    private property <length> plot-y: self.pad-top;
+    private property <length> plot-width: Math.max(1px, self.width - self.axis-width - 4px);
+    private property <length> plot-height: Math.max(1px, self.height - self.pad-top - self.pad-bottom);
+    private property <length> slot: self.plot-width / Math.max(1, self.bars.length);
+    private property <length> bar-width: Math.min(24px, self.slot * 0.62);
+    private property <int> hover-index: Math.clamp(Math.floor(touch.mouse-x / self.slot), 0, Math.max(0, self.bars.length - 1));
+
+    for line[i] in [0, 0.5, 1]: Rectangle {
+        x: root.plot-x;
+        y: root.plot-y + root.plot-height * line - (i == 2 ? 1px : 0px);
+        width: root.plot-width;
+        height: 1px;
+        background: i == 2 ? Theme.baseline : Theme.grid;
+    }
+    for label[i] in [root.max-label, root.mid-label, "0"]: Text {
+        x: 0px;
+        width: root.axis-width - 10px;
+        y: root.plot-y + root.plot-height * i / 2 - self.height / 2;
+        text: label;
+        color: Theme.text-muted;
+        font-size: 11px;
+        horizontal-alignment: right;
+    }
+
+    if touch.has-hover && root.bars.length > 0: Rectangle {
+        x: root.plot-x + root.slot * root.hover-index;
+        y: root.plot-y;
+        width: root.slot;
+        height: root.plot-height;
+        background: Theme.hover;
+        border-radius: 4px;
+    }
+
+    for bar[i] in root.bars: Rectangle {
+        property <length> rx-height: bar.rx-ratio > 0 ? Math.max(2px, root.plot-height * bar.rx-ratio) : 0px;
+        property <length> gap: bar.rx-ratio > 0 && bar.tx-ratio > 0 ? 2px : 0px;
+        property <length> tx-height: bar.tx-ratio > 0 ? Math.max(2px, root.plot-height * bar.tx-ratio - self.gap) : 0px;
+        x: root.plot-x + root.slot * i + (root.slot - root.bar-width) / 2;
+        y: root.plot-y;
+        width: root.bar-width;
+        height: root.plot-height;
+
+        Rectangle {
+            y: parent.height - parent.rx-height;
+            height: parent.rx-height;
+            background: Theme.rx;
+            border-top-left-radius: bar.tx-ratio > 0 ? 0px : Math.min(4px, self.height / 2);
+            border-top-right-radius: self.border-top-left-radius;
+        }
+        Rectangle {
+            y: parent.height - parent.rx-height - parent.gap - parent.tx-height;
+            height: parent.tx-height;
+            background: Theme.tx;
+            border-top-left-radius: Math.min(4px, self.height / 2);
+            border-top-right-radius: self.border-top-left-radius;
+        }
+    }
+
+    for bar[i] in root.bars: Text {
+        visible: bar.show-label;
+        x: root.plot-x + root.slot * i + root.slot / 2 - self.width / 2;
+        y: root.plot-y + root.plot-height + 6px;
+        text: bar.today ? "今日" : bar.label;
+        color: bar.today ? Theme.text-secondary : Theme.text-muted;
+        font-size: 11px;
+        font-weight: bar.today ? 600 : 400;
+    }
+
+    touch := TouchArea {
+        x: root.plot-x;
+        y: root.plot-y;
+        width: root.plot-width;
+        height: root.plot-height;
+    }
+
+    // Shown beside the hovered column so it never hides the column itself.
+    if touch.has-hover && root.bars.length > 0: Tooltip {
+        property <length> slot-x: root.plot-x + root.slot * root.hover-index;
+        text: root.bars[root.hover-index].tooltip;
+        x: self.slot-x + root.slot + 4px + self.width <= root.width ? self.slot-x + root.slot + 4px : Math.max(0px, self.slot-x - 4px - self.width);
+        y: root.plot-y + 4px;
+    }
+}
+
+// Tiny receive/transmit line chart used in the interface list.
+export component Sparkline inherits Rectangle {
+    in property <string> rx;
+    in property <string> tx;
+    in property <float> viewbox-width: 119;
+
+    Path {
+        viewbox-x: 0; viewbox-y: 0;
+        viewbox-width: root.viewbox-width; viewbox-height: 100;
+        fit: ImageFit.fill;
+        commands: root.tx;
+        fill: transparent;
+        stroke: Theme.tx;
+        stroke-width: 1.5px;
+        stroke-line-join: round;
+    }
+    Path {
+        viewbox-x: 0; viewbox-y: 0;
+        viewbox-width: root.viewbox-width; viewbox-height: 100;
+        fit: ImageFit.fill;
+        commands: root.rx;
+        fill: transparent;
+        stroke: Theme.rx;
+        stroke-width: 1.5px;
+        stroke-line-join: round;
+    }
+}

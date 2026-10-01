@@ -1,0 +1,34 @@
+import { Palette } from "std-widgets.slint";
+
+// Colors used across the application. Light and dark values are picked
+// separately (dark is not an automatic inversion). The two data series use
+// a colour-vision-deficiency safe pair: blue = received, orange = sent.
+export global Theme {
+    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+
+    out property <color> page: dark ? #111110 : #f3f3f0;
+    out property <color> surface: dark ? #1a1a19 : #fcfcfb;
+    out property <color> surface-raised: dark ? #232321 : #ffffff;
+    out property <color> hover: dark ? #ffffff0f : #0b0b0b0a;
+    out property <color> selected: dark ? #3987e526 : #2a78d61f;
+    out property <color> border: dark ? #ffffff1a : #0b0b0b1a;
+
+    out property <color> text-primary: dark ? #ffffff : #0b0b0b;
+    out property <color> text-secondary: dark ? #c3c2b7 : #52514e;
+    out property <color> text-muted: #898781;
+
+    out property <color> grid: dark ? #2c2c2a : #e1e0d9;
+    out property <color> baseline: dark ? #383835 : #c3c2b7;
+
+    out property <color> rx: dark ? #3987e5 : #2a78d6;
+    out property <color> tx: dark ? #d95926 : #eb6834;
+    out property <color> accent: dark ? #3987e5 : #2a78d6;
+    out property <color> magnitude: dark ? #6d6c66 : #b5b3ab;
+
+    // Status colours are reserved for state and always come with a label.
+    out property <color> good: #0ca30c;
+    out property <color> warning: #fab219;
+    out property <color> critical: #d03b3b;
+
+    out property <length> radius: 8px;
+}

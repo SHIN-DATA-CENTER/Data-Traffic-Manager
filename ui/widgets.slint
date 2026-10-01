@@ -1,0 +1,327 @@
+import { Theme } from "theme.slint";
+import { Icon } from "icons.slint";
+import { InterfaceItem, TrafficText } from "types.slint";
+import { Sparkline } from "charts.slint";
+
+export component Card inherits Rectangle {
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: Theme.border;
+}
+
+export component SectionTitle inherits Text {
+    color: Theme.text-primary;
+    font-size: 14px;
+    font-weight: 600;
+    vertical-alignment: center;
+}
+
+// Coloured key next to a label; identity is never carried by text colour.
+export component LegendKey inherits HorizontalLayout {
+    in property <color> color;
+    in property <string> text;
+    spacing: 6px;
+    alignment: start;
+    horizontal-stretch: 0;
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: 12px;
+        height: 3px;
+        border-radius: 1.5px;
+        background: root.color;
+    }
+    Text {
+        text: root.text;
+        color: Theme.text-secondary;
+        font-size: 12px;
+        vertical-alignment: center;
+    }
+}
+
+// Status indicator: filled (up), grey (down) or hollow (absent).
+export component StatusDot inherits Rectangle {
+    in property <string> status;
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background: root.status == "up" ? Theme.good : root.status == "down" ? Theme.text-muted : transparent;
+    border-width: root.status == "absent" ? 1.5px : 0px;
+    border-color: Theme.text-muted;
+}
+
+// Rounded square with the interface type icon and a status dot.
+export component KindBadge inherits Rectangle {
+    in property <string> kind;
+    in property <string> status;
+    in property <length> size: 36px;
+    width: self.size;
+    height: self.size;
+    border-radius: self.size / 4;
+    background: Theme.hover;
+    Icon {
+        name: root.kind;
+        width: root.size * 0.55;
+        height: root.size * 0.55;
+        color: root.status == "up" ? Theme.text-primary : Theme.text-muted;
+    }
+    StatusDot {
+        status: root.status;
+        x: parent.width - self.width + 2px;
+        y: parent.height - self.height + 2px;
+        border-width: 2px;
+        border-color: root.status == "absent" ? Theme.text-muted : Theme.surface;
+    }
+}
+
+export component IconButton inherits Rectangle {
+    in property <string> icon;
+    in property <string> tooltip;
+    callback clicked;
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    background: touch.pressed ? Theme.selected : touch.has-hover ? Theme.hover : transparent;
+    accessible-role: button;
+    accessible-label: root.tooltip;
+    accessible-action-default => { root.clicked(); }
+    Icon {
+        name: root.icon;
+        color: Theme.text-primary;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component InterfaceListItem inherits Rectangle {
+    in property <InterfaceItem> item;
+    callback clicked;
+    height: 76px;
+    border-radius: 6px;
+    background: root.item.selected ? Theme.selected : touch.has-hover ? Theme.hover : transparent;
+    accessible-role: list-item;
+    accessible-label: root.item.name;
+    accessible-item-selected: root.item.selected;
+    accessible-action-default => { root.clicked(); }
+
+    // Selection marker.
+    Rectangle {
+        x: 0px;
+        y: 18px;
+        width: 3px;
+        height: parent.height - 36px;
+        border-radius: 1.5px;
+        background: root.item.selected ? Theme.accent : transparent;
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 10px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 10px;
+
+        VerticalLayout {
+            alignment: start;
+            KindBadge {
+                kind: root.item.kind;
+                status: root.item.status;
+            }
+        }
+
+        VerticalLayout {
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.item.name;
+                color: root.item.status == "absent" ? Theme.text-secondary : Theme.text-primary;
+                font-size: 13px;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.item.description;
+                color: Theme.text-muted;
+                font-size: 11px;
+                overflow: elide;
+            }
+            HorizontalLayout {
+                spacing: 4px;
+                alignment: start;
+                Icon { name: "down"; width: 12px; height: 12px; color: Theme.rx; y: (parent.height - self.height) / 2; }
+                Text {
+                    text: root.item.rx-rate;
+                    color: Theme.text-secondary;
+                    font-size: 11px;
+                    min-width: 64px;
+                }
+                Icon { name: "up"; width: 12px; height: 12px; color: Theme.tx; y: (parent.height - self.height) / 2; }
+                Text {
+                    text: root.item.tx-rate;
+                    color: Theme.text-secondary;
+                    font-size: 11px;
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            Sparkline {
+                width: 56px;
+                height: 26px;
+                rx: root.item.spark-rx;
+                tx: root.item.spark-tx;
+            }
+            Text {
+                text: "今日 " + root.item.today-total;
+                color: Theme.text-muted;
+                font-size: 10px;
+                horizontal-alignment: right;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Large current-rate figure.
+export component RateTile inherits Card {
+    in property <string> title;
+    in property <string> icon;
+    in property <color> series-color;
+    in property <string> value;
+    in property <string> peak;
+    min-height: 88px;
+    // Equal widths when several tiles share a row.
+    preferred-width: 100px;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 4px;
+        alignment: start;
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            Rectangle {
+                width: 20px;
+                height: 20px;
+                border-radius: 10px;
+                background: root.series-color.transparentize(0.82);
+                Icon { name: root.icon; width: 14px; height: 14px; color: root.series-color; }
+            }
+            Text {
+                text: root.title;
+                color: Theme.text-secondary;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+        Text {
+            text: root.value;
+            color: Theme.text-primary;
+            font-size: 26px;
+            font-weight: 600;
+        }
+        Text {
+            text: "最大 " + root.peak;
+            color: Theme.text-muted;
+            font-size: 11px;
+        }
+    }
+}
+
+// Total with received / sent breakdown.
+export component StatTile inherits Card {
+    in property <string> title;
+    in property <TrafficText> traffic;
+    in property <string> note;
+    min-height: 92px;
+    preferred-width: 100px;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 4px;
+        alignment: start;
+        Text {
+            text: root.title;
+            color: Theme.text-secondary;
+            font-size: 12px;
+            overflow: elide;
+        }
+        Text {
+            text: root.traffic.total;
+            color: Theme.text-primary;
+            font-size: 20px;
+            font-weight: 600;
+        }
+        HorizontalLayout {
+            spacing: 4px;
+            alignment: start;
+            Icon { name: "down"; width: 12px; height: 12px; color: Theme.rx; y: (parent.height - self.height) / 2; }
+            Text { text: root.traffic.rx; color: Theme.text-secondary; font-size: 11px; }
+            Rectangle { width: 6px; }
+            Icon { name: "up"; width: 12px; height: 12px; color: Theme.tx; y: (parent.height - self.height) / 2; }
+            Text { text: root.traffic.tx; color: Theme.text-secondary; font-size: 11px; }
+        }
+        if root.note != "": Text {
+            text: root.note;
+            color: Theme.text-muted;
+            font-size: 11px;
+            overflow: elide;
+        }
+    }
+}
+
+export component SegmentedTabs inherits Rectangle {
+    in property <[string]> tabs;
+    in-out property <int> current;
+    height: 34px;
+    border-radius: 8px;
+    background: Theme.hover;
+    HorizontalLayout {
+        padding: 3px;
+        spacing: 2px;
+        alignment: start;
+        for tab-name[i] in root.tabs: Rectangle {
+            width: label.preferred-width + 28px;
+            border-radius: 6px;
+            background: i == root.current ? Theme.surface-raised : touch.has-hover ? Theme.hover : transparent;
+            drop-shadow-blur: i == root.current ? 3px : 0px;
+            drop-shadow-color: #00000022;
+            accessible-role: AccessibleRole.tab;
+            accessible-label: tab-name;
+            accessible-item-selected: i == root.current;
+            accessible-action-default => { root.current = i; }
+            label := Text {
+                text: tab-name;
+                color: i == root.current ? Theme.text-primary : Theme.text-secondary;
+                font-size: 13px;
+                font-weight: i == root.current ? 600 : 400;
+                vertical-alignment: center;
+            }
+            touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.current = i; }
+            }
+        }
+    }
+}
+
+// Meter whose fill colour carries severity (0 = ok, 1 = warning, 2 = over).
+export component Meter inherits Rectangle {
+    in property <float> ratio;
+    in property <int> level;
+    height: 8px;
+    border-radius: 4px;
+    background: Theme.accent.transparentize(0.82);
+    Rectangle {
+        x: 0px;
+        width: parent.width * Math.clamp(root.ratio, 0, 1);
+        border-radius: 4px;
+        background: root.level == 2 ? Theme.critical : root.level == 1 ? Theme.warning : Theme.accent;
+    }
+}

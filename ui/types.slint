@@ -1,0 +1,85 @@
+// Data structures filled from Rust (see src/main.rs).
+
+export struct InterfaceItem {
+    key: string,
+    name: string,
+    description: string,
+    kind: string,
+    kind-label: string,
+    status: string,
+    rx-rate: string,
+    tx-rate: string,
+    today-total: string,
+    spark-rx: string,
+    spark-tx: string,
+    selected: bool,
+}
+
+export struct TrafficText {
+    rx: string,
+    tx: string,
+    total: string,
+}
+
+export struct GraphPoint {
+    rx: float,
+    tx: float,
+    label: string,
+}
+
+export struct DayBar {
+    label: string,
+    rx-ratio: float,
+    tx-ratio: float,
+    tooltip: string,
+    today: bool,
+    weekend: bool,
+    show-label: bool,
+}
+
+export struct MonthRow {
+    label: string,
+    rx: string,
+    tx: string,
+    total: string,
+    ratio: float,
+    current: bool,
+}
+
+export struct Detail {
+    valid: bool,
+    key: string,
+    name: string,
+    description: string,
+    kind: string,
+    kind-label: string,
+    status: string,
+    status-label: string,
+    link-speed: string,
+    rx-rate: string,
+    tx-rate: string,
+    rx-peak: string,
+    tx-peak: string,
+    graph-rx-area: string,
+    graph-rx-line: string,
+    graph-tx-area: string,
+    graph-tx-line: string,
+    graph-viewbox-width: float,
+    graph-max: string,
+    graph-mid: string,
+    graph-span: string,
+    graph-start: string,
+    session: TrafficText,
+    today: TrafficText,
+    period: TrafficText,
+    period-label: string,
+    forecast: string,
+    all-time: TrafficText,
+    all-time-since: string,
+    limit-gb: int,
+    limit-ratio: float,
+    limit-level: int,
+    limit-text: string,
+    days-max: string,
+    days-mid: string,
+}
