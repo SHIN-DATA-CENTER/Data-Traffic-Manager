@@ -24,6 +24,23 @@ WireGuard（WireGuardNT）、Wintun、TAP などの VPN アダプターも、有
 - Windows 10 / 11（x64）
 - 開発用に Linux でも動作します（`/sys/class/net` から取得）
 
+## インストール
+
+[Releases](https://github.com/SHIN-DATA-CENTER/Data-Traffic-Manager/releases/latest) から次のどちらかをダウンロードします。
+
+| ファイル | 内容 |
+| --- | --- |
+| `DataTrafficManager-<バージョン>-setup-x64.exe` | インストーラー（おすすめ）。`C:\Program Files\Data Traffic Manager` にインストールし、スタートメニューに登録します |
+| `data-traffic-manager-<バージョン>-portable-x64.exe` | インストール不要の単体版。任意のフォルダーに置いて実行します |
+
+実行ファイルにはコード署名をしていないため、初回は「Windows によって PC が保護されました」と表示されることがあります。
+その場合は [詳細情報] → [実行] を選んでください。ダウンロードしたファイルは `SHA256SUMS.txt` で検証できます。
+
+- **更新:** 新しいインストーラーをそのまま実行します。起動中のアプリは自動で終了し（記録中の通信量は保存されます）、同じ場所に上書きされます。
+- **アンインストール:** Windows の「設定」→「アプリ」から削除します。使用量の履歴と設定を残すかどうかを選べます。
+- **サイレントインストール:** `DataTrafficManager-<バージョン>-setup-x64.exe /S`（インストール先は `/D=C:\path` で指定。必ず最後の引数にします）。
+  サイレントアンインストールは `"C:\Program Files\Data Traffic Manager\uninstall.exe" /S` で、使用量の履歴は残ります。
+
 ## ビルド
 
 [Rust](https://rustup.rs/)（1.92 以降）をインストールしてから:
@@ -35,13 +52,25 @@ cargo build --release
 ```
 
 `target\release\data-traffic-manager.exe` が生成されます。単体で動作するので、好きな場所にコピーして使えます。
-GitHub Actions の成果物（Artifacts）からビルド済みの exe をダウンロードすることもできます。
+
+インストーラーは [NSIS](https://nsis.sourceforge.io/)（3.x）で作成します。
+
+```powershell
+makensis /DVERSION=0.1.0 installer\installer.nsi   # dist\DataTrafficManager-0.1.0-setup-x64.exe
+```
 
 Linux でビルドする場合は X11/Wayland 関連のライブラリ（`libxkbcommon-x11`、`libfontconfig` など）が必要です。
 
+### リリース手順
+
+1. `Cargo.toml` の `version` と `CHANGELOG.md` を更新してコミットします。
+2. `v<バージョン>` のタグ（例: `v0.1.0`）を push します。
+3. GitHub Actions がテスト・インストーラーの動作確認を行い、インストーラー・単体版・チェックサムを添付したリリースを作成します。
+   リリースノートには `CHANGELOG.md` の該当バージョンの節が使われます。
+
 ## 使い方
 
-1. `data-traffic-manager.exe` を起動します。管理者権限は不要です。
+1. スタートメニューの「Data Traffic Manager」（単体版は exe）を起動します。管理者権限は不要です。
 2. 左の一覧から監視したいインターフェースを選びます。VPN アダプターは一覧の上に表示されます。
 3. 「モニター」タブで現在の速度とグラフ、「使用量の履歴」タブで日別・月別の通信量と月間の上限を確認・設定できます。
 4. 右上の設定ボタンから、更新間隔・単位・締め日・トレイ常駐・自動起動などを変更できます。
@@ -69,7 +98,8 @@ Teredo などの IPv6 移行用の疑似インターフェース、一度も使�
 | `settings.json` | 設定（更新間隔、単位、締め日、月間の上限など） |
 
 環境変数 `DTM_DATA_DIR` で保存先を変更できます（USB メモリなどでのポータブル利用向け）。
-ファイルは 30 秒ごとと終了時に保存されます。読み込めないファイルは `*.broken` に退避され、上書きされることはありません。
+ファイルは 30 秒ごとと終了時に保存されます。
+`data-traffic-manager.exe --quit` を実行すると、起動中のアプリがデータを保存して終了します（インストーラーが更新・削除の前に使用します）。読み込めないファイルは `*.broken` に退避され、上書きされることはありません。
 
 ## 開発
 
@@ -98,6 +128,7 @@ CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=wine cargo test --lib --target x86_64-
 | `src/desktop.rs` | 多重起動の防止、自動起動（レジストリ）、フォルダーを開く |
 | `src/main.rs` | Slint の画面との接続。計測はバックグラウンドスレッドで行います |
 | `ui/` | Slint の画面定義 |
+| `installer/installer.nsi` | NSIS インストーラーのスクリプト |
 
 ## ライセンス
 

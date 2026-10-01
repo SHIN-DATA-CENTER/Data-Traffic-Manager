@@ -16,6 +16,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -31,17 +34,96 @@ jobs:
       - name: Interfaces seen by the backend
         run: cargo run --example list_interfaces
       - name: Build release
-        run: cargo build --release
-      - name: Upload executable
+        run: |
+          cargo build --release
+          $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages[0].version
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Smoke test (start, save, quit)
+        run: |
+          $exe = "target\release\data-traffic-manager.exe"
+          $env:DTM_DATA_DIR = "$env:RUNNER_TEMP\dtm-smoke"
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($process.HasExited) { throw "The application exited right after start (exit code $($process.ExitCode))" }
+          # Same mechanism the installer uses to stop a running instance.
+          & $exe --quit
+          if (-not $process.WaitForExit(15000)) { $process.Kill(); throw "The application did not exit after --quit" }
+          if (-not (Test-Path "$env:DTM_DATA_DIR\usage.json")) { throw "usage.json was not written on exit" }
+          Get-Content "$env:DTM_DATA_DIR\usage.json" -TotalCount 15
+
+      - name: Build installer
+        run: |
+          $nsis = "${env:ProgramFiles(x86)}\NSIS"
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            if (-not (Test-Path "$nsis\makensis.exe")) { choco install nsis -y --no-progress }
+            $env:PATH = "$nsis;$env:PATH"
+          }
+          makensis /WX "/DVERSION=$env:VERSION" installer\installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
+          Copy-Item target\release\data-traffic-manager.exe "dist\data-traffic-manager-$env:VERSION-portable-x64.exe"
+          Get-ChildItem dist -Filter *.exe | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          } | Set-Content dist\SHA256SUMS.txt -Encoding ascii
+          Get-Content dist\SHA256SUMS.txt
+
+      - name: Installer test (install, upgrade over a running instance, uninstall)
+        run: |
+          $setup = "dist\DataTrafficManager-$env:VERSION-setup-x64.exe"
+          $dir = "$env:RUNNER_TEMP\dtm-install"
+          $key = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DataTrafficManager"
+          $env:DTM_DATA_DIR = "$env:RUNNER_TEMP\dtm-installed-data"
+
+          Start-Process -Wait -FilePath $setup -ArgumentList "/S", "/D=$dir"
+          if (-not (Test-Path "$dir\data-traffic-manager.exe")) { throw "The executable was not installed" }
+          if (-not (Test-Path "$dir\uninstall.exe")) { throw "The uninstaller was not installed" }
+          $entry = Get-ItemProperty $key
+          if ($entry.DisplayVersion -ne $env:VERSION) { throw "Unexpected DisplayVersion $($entry.DisplayVersion)" }
+          if (-not (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Data Traffic Manager.lnk")) { throw "Start menu shortcut missing" }
+
+          # Upgrade while the application is running: it must be closed and replaced.
+          $app = Start-Process -FilePath "$dir\data-traffic-manager.exe" -PassThru
+          Start-Sleep -Seconds 5
+          Start-Process -Wait -FilePath $setup -ArgumentList "/S"
+          if (-not $app.HasExited) { throw "The installer did not close the running application" }
+          if (-not (Test-Path "$env:DTM_DATA_DIR\usage.json")) { throw "The application did not save before closing" }
+          if (-not (Test-Path "$dir\data-traffic-manager.exe")) { throw "Upgrade removed the executable" }
+
+          # _?= keeps the uninstaller in place so we can wait for it.
+          Start-Process -Wait -FilePath "$dir\uninstall.exe" -ArgumentList "/S", "_?=$dir"
+          if (Test-Path "$dir\data-traffic-manager.exe") { throw "The executable was not removed" }
+          if (Test-Path $key) { throw "The uninstall entry was not removed" }
+          if (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Data Traffic Manager.lnk") { throw "Start menu shortcut was not removed" }
+          if (-not (Test-Path "$env:DTM_DATA_DIR\usage.json")) { throw "A silent uninstall must keep the usage history" }
+          Write-Host "Installer test passed"
+
+      - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
-          name: data-traffic-manager-windows-x64
-          path: target/release/data-traffic-manager.exe
-      - name: Attach to release
+          name: data-traffic-manager-${{ env.VERSION }}-windows-x64
+          path: dist/*
+
+      - name: Release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          if ($tag -ne $env:VERSION) { throw "Tag v$tag does not match the version in Cargo.toml ($env:VERSION)" }
+          $changelog = Get-Content CHANGELOG.md -Raw -Encoding utf8
+          $pattern = "(?ms)^## \[$([regex]::Escape($env:VERSION))\][^\n]*\n(.*?)(?=^## \[|\z)"
+          $match = [regex]::Match($changelog, $pattern)
+          if (-not $match.Success) { throw "CHANGELOG.md has no section for $env:VERSION" }
+          Set-Content dist\release-notes.md $match.Groups[1].Value.Trim() -Encoding utf8
+
+      - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/data-traffic-manager.exe
+          name: Data Traffic Manager ${{ github.ref_name }}
+          body_path: dist/release-notes.md
+          files: |
+            dist/DataTrafficManager-${{ env.VERSION }}-setup-x64.exe
+            dist/data-traffic-manager-${{ env.VERSION }}-portable-x64.exe
+            dist/SHA256SUMS.txt
 
   linux:
     name: Linux (test)
@@ -53,8 +135,13 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Install system libraries
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev nsis
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test
+      - name: Installer script compiles
+        run: |
+          mkdir -p dist target/release
+          touch target/release/data-traffic-manager.exe
+          makensis -WX -V2 -DVERSION=0.0.0 installer/installer.nsi

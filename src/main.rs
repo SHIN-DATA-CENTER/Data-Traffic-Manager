@@ -20,20 +20,32 @@ enum Message {
 }
 
 fn main() -> Result<(), slint::PlatformError> {
-    let start_minimized = std::env::args().any(|arg| arg == desktop::MINIMIZED_FLAG);
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == desktop::QUIT_FLAG) {
+        // Used by the installer: the running instance saves and exits.
+        desktop::request_quit();
+        return Ok(());
+    }
+    let start_minimized = args.iter().any(|arg| arg == desktop::MINIMIZED_FLAG);
 
     // Set up the window before claiming the instance, so the activation
     // callback of a second launch has something to show.
     let ui = AppWindow::new()?;
     let ui_weak = ui.as_weak();
-    let _instance = match desktop::single_instance(move || {
+    let on_activate = move || {
         let ui = ui_weak.clone();
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(ui) = ui.upgrade() {
                 show_window(&ui);
             }
         });
-    }) {
+    };
+    let on_quit = || {
+        let _ = slint::invoke_from_event_loop(|| {
+            let _ = slint::quit_event_loop();
+        });
+    };
+    let _instance = match desktop::single_instance(on_activate, on_quit) {
         Instance::Primary(guard) => guard,
         Instance::Secondary => return Ok(()),
     };

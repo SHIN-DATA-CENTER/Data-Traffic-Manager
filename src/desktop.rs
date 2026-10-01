@@ -6,6 +6,10 @@ use std::path::Path;
 /// Command line flag used by the autostart entry to start in the tray.
 pub const MINIMIZED_FLAG: &str = "--minimized";
 
+/// Command line flag that asks a running instance to save its data and exit
+/// (used by the installer before replacing or removing the executable).
+pub const QUIT_FLAG: &str = "--quit";
+
 /// Result of [`single_instance`].
 pub enum Instance {
     /// This process is the first instance. Keep the value alive.
@@ -18,9 +22,16 @@ pub enum Instance {
 ///
 /// When another instance is already running it is notified (it calls
 /// `on_activate` on a background thread) and [`Instance::Secondary`] is
-/// returned. On platforms without support every process is primary.
-pub fn single_instance(on_activate: impl Fn() + Send + 'static) -> Instance {
-    imp::single_instance(on_activate)
+/// returned. The primary instance calls `on_quit` (on a background thread)
+/// when [`request_quit`] is used. On platforms without support every
+/// process is primary.
+pub fn single_instance(on_activate: impl Fn() + Send + 'static, on_quit: impl Fn() + Send + 'static) -> Instance {
+    imp::single_instance(on_activate, on_quit)
+}
+
+/// Asks the running instance, if any, to exit. Returns whether one was found.
+pub fn request_quit() -> bool {
+    imp::request_quit()
 }
 
 pub use imp::InstanceGuard;
@@ -69,7 +80,8 @@ mod imp {
 
     use super::{Instance, MINIMIZED_FLAG};
 
-    const EVENT_NAME: &str = "Local\\SHIN-DATA-CENTER.DataTrafficManager.Activate";
+    /// Prefix of the named events; `.Activate` and `.Quit` are appended.
+    const EVENT_BASE: &str = "Local\\SHIN-DATA-CENTER.DataTrafficManager";
     const RUN_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
     const RUN_VALUE: &str = "DataTrafficManager";
 
@@ -82,43 +94,78 @@ mod imp {
         s.encode_utf16().chain(Some(0)).collect()
     }
 
-    pub fn single_instance(on_activate: impl Fn() + Send + 'static) -> Instance {
-        single_instance_named(EVENT_NAME, on_activate)
+    pub fn single_instance(on_activate: impl Fn() + Send + 'static, on_quit: impl Fn() + Send + 'static) -> Instance {
+        single_instance_named(EVENT_BASE, on_activate, on_quit)
     }
 
-    pub(super) fn single_instance_named(name: &str, on_activate: impl Fn() + Send + 'static) -> Instance {
+    pub fn request_quit() -> bool {
+        request_quit_named(EVENT_BASE)
+    }
+
+    /// Creates (or opens) an auto-reset named event. Returns the handle and
+    /// whether the event already existed.
+    fn named_event(name: &str) -> Option<(HANDLE, bool)> {
         let name = wide(name);
         // SAFETY: valid, NUL terminated name; default security attributes.
         let event = unsafe { CreateEventW(std::ptr::null(), 0, 0, name.as_ptr()) };
-        if event.is_null() {
-            // Cannot tell; behave as if we were alone.
-            return Instance::Primary(InstanceGuard(event));
-        }
         // SAFETY: called right after CreateEventW on the same thread.
-        if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
-            // SAFETY: `event` is a valid handle owned by us.
-            unsafe {
-                // Let the running instance bring its window to the front.
-                AllowSetForegroundWindow(ASFW_ANY);
-                SetEvent(event);
-                CloseHandle(event);
-            }
-            return Instance::Secondary;
-        }
+        let existed = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+        (!event.is_null()).then_some((event, existed))
+    }
 
-        let waiter = event as usize;
+    /// Calls `callback` every time `event` is signalled. The handle stays open
+    /// for the lifetime of the process.
+    fn watch(event: HANDLE, thread_name: &str, callback: impl Fn() + Send + 'static) {
+        let event = event as usize;
         std::thread::Builder::new()
-            .name("instance-activation".into())
+            .name(thread_name.into())
             .spawn(move || {
-                let event = waiter as HANDLE;
-                // SAFETY: the handle stays open for the lifetime of the process
-                // (the guard is never closed explicitly).
-                while unsafe { WaitForSingleObject(event, INFINITE) } == WAIT_OBJECT_0 {
-                    on_activate();
+                // SAFETY: the handle is never closed while the process runs.
+                while unsafe { WaitForSingleObject(event as HANDLE, INFINITE) } == WAIT_OBJECT_0 {
+                    callback();
                 }
             })
             .ok();
-        Instance::Primary(InstanceGuard(event))
+    }
+
+    pub(super) fn single_instance_named(
+        base: &str,
+        on_activate: impl Fn() + Send + 'static,
+        on_quit: impl Fn() + Send + 'static,
+    ) -> Instance {
+        let Some((activate, existed)) = named_event(&format!("{base}.Activate")) else {
+            // Cannot tell; behave as if we were alone.
+            return Instance::Primary(InstanceGuard(std::ptr::null_mut()));
+        };
+        if existed {
+            // SAFETY: `activate` is a valid handle owned by us.
+            unsafe {
+                // Let the running instance bring its window to the front.
+                AllowSetForegroundWindow(ASFW_ANY);
+                SetEvent(activate);
+                CloseHandle(activate);
+            }
+            return Instance::Secondary;
+        }
+        watch(activate, "instance-activation", on_activate);
+        if let Some((quit, _)) = named_event(&format!("{base}.Quit")) {
+            watch(quit, "instance-quit", on_quit);
+        }
+        Instance::Primary(InstanceGuard(activate))
+    }
+
+    pub(super) fn request_quit_named(base: &str) -> bool {
+        let Some((quit, existed)) = named_event(&format!("{base}.Quit")) else {
+            return false;
+        };
+        // SAFETY: `quit` is a valid handle owned by us.
+        unsafe {
+            if existed {
+                SetEvent(quit);
+            }
+            CloseHandle(quit);
+        }
+        existed
     }
 
     pub fn autostart_enabled() -> bool {
@@ -184,8 +231,12 @@ mod imp {
 
     pub struct InstanceGuard;
 
-    pub fn single_instance(_on_activate: impl Fn() + Send + 'static) -> Instance {
+    pub fn single_instance(_on_activate: impl Fn() + Send + 'static, _on_quit: impl Fn() + Send + 'static) -> Instance {
         Instance::Primary(InstanceGuard)
+    }
+
+    pub fn request_quit() -> bool {
+        false
     }
 
     pub fn autostart_enabled() -> bool {
@@ -203,27 +254,49 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::{Duration, Instant};
 
-    use super::imp::{autostart_enabled_named, set_autostart_named, single_instance_named};
+    use super::imp::{autostart_enabled_named, request_quit_named, set_autostart_named, single_instance_named};
     use super::*;
 
     // The tests use their own names so they never touch a real installation.
+
+    fn wait_for(counter: &AtomicU32, expected: u32) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while counter.load(Ordering::SeqCst) < expected && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(counter.load(Ordering::SeqCst), expected);
+    }
 
     #[test]
     fn second_instance_activates_the_first() {
         let name = format!("Local\\DataTrafficManager.Test.{}", std::process::id());
         let activations = Arc::new(AtomicU32::new(0));
-        let counter = activations.clone();
-        let first = single_instance_named(&name, move || {
-            counter.fetch_add(1, Ordering::SeqCst);
-        });
+        let quits = Arc::new(AtomicU32::new(0));
+        let (a, q) = (activations.clone(), quits.clone());
+        let first = single_instance_named(
+            &name,
+            move || {
+                a.fetch_add(1, Ordering::SeqCst);
+            },
+            move || {
+                q.fetch_add(1, Ordering::SeqCst);
+            },
+        );
         assert!(matches!(first, Instance::Primary(_)));
-        assert!(matches!(single_instance_named(&name, || {}), Instance::Secondary));
+        assert!(matches!(single_instance_named(&name, || {}, || {}), Instance::Secondary));
+        wait_for(&activations, 1);
 
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while activations.load(Ordering::SeqCst) == 0 && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(10));
-        }
+        assert!(request_quit_named(&name));
+        wait_for(&quits, 1);
         assert_eq!(activations.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn quit_without_running_instance() {
+        let name = format!("Local\\DataTrafficManager.NoInstance.{}", std::process::id());
+        assert!(!request_quit_named(&name));
+        // The probe must not leave an event behind that looks like an instance.
+        assert!(!request_quit_named(&name));
     }
 
     #[test]
