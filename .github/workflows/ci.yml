@@ -6,6 +6,19 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a release for the version in Cargo.toml"
+        type: boolean
+        default: false
+
+# A release (installer, portable exe and checksums attached) is published
+# after all tests and the installer test have passed, when one of these holds:
+#   - a v* tag is pushed (the tag must match the version in Cargo.toml),
+#   - a pushed commit message contains "[release]",
+#   - the workflow is run manually with "release" checked.
+# In the last two cases the tag v<version> is created by this workflow and
+# must not exist yet.
 
 env:
   CARGO_TERM_COLOR: always
@@ -104,11 +117,27 @@ jobs:
           name: data-traffic-manager-${{ env.VERSION }}-windows-x64
           path: dist/*
 
-      - name: Release notes
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Decide whether to release
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          DISPATCH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release }}
         run: |
-          $tag = "${{ github.ref_name }}".TrimStart("v")
-          if ($tag -ne $env:VERSION) { throw "Tag v$tag does not match the version in Cargo.toml ($env:VERSION)" }
+          $release = $false
+          $tag = "v$env:VERSION"
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            if ($env:GITHUB_REF_NAME -ne $tag) { throw "Tag $env:GITHUB_REF_NAME does not match the version in Cargo.toml ($env:VERSION)" }
+            $release = $true
+          } elseif ($env:DISPATCH_RELEASE -eq "true" -or ($env:GITHUB_EVENT_NAME -eq "push" -and $env:COMMIT_MESSAGE -match "\[release\]")) {
+            if (git ls-remote --tags origin "refs/tags/$tag") { throw "Tag $tag already exists. Update the version in Cargo.toml and CHANGELOG.md first." }
+            $release = $true
+          }
+          Write-Host "release=$release tag=$tag"
+          "RELEASE=$($release.ToString().ToLower())" >> $env:GITHUB_ENV
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+
+      - name: Release notes
+        if: env.RELEASE == 'true'
+        run: |
           $changelog = Get-Content CHANGELOG.md -Raw -Encoding utf8
           $pattern = "(?ms)^## \[$([regex]::Escape($env:VERSION))\][^\n]*\n(.*?)(?=^## \[|\z)"
           $match = [regex]::Match($changelog, $pattern)
@@ -116,11 +145,14 @@ jobs:
           Set-Content dist\release-notes.md $match.Groups[1].Value.Trim() -Encoding utf8
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.RELEASE == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          name: Data Traffic Manager ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Data Traffic Manager ${{ env.RELEASE_TAG }}
           body_path: dist/release-notes.md
+          make_latest: true
           files: |
             dist/DataTrafficManager-${{ env.VERSION }}-setup-x64.exe
             dist/data-traffic-manager-${{ env.VERSION }}-portable-x64.exe
