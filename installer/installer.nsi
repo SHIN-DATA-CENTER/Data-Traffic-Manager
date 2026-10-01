@@ -1,6 +1,7 @@
 ﻿; Data Traffic Manager - NSIS installer
 ;
 ; Build (from the repository root, after `cargo build --release`):
+;   mkdir dist
 ;   makensis /DVERSION=0.1.0 installer\installer.nsi
 ;
 ; Optional defines:

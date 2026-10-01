@@ -56,6 +56,7 @@ cargo build --release
 インストーラーは [NSIS](https://nsis.sourceforge.io/)（3.x）で作成します。
 
 ```powershell
+mkdir dist
 makensis /DVERSION=0.1.0 installer\installer.nsi   # dist\DataTrafficManager-0.1.0-setup-x64.exe
 ```
 

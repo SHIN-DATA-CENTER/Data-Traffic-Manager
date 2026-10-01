@@ -59,6 +59,7 @@ jobs:
             if (-not (Test-Path "$nsis\makensis.exe")) { choco install nsis -y --no-progress }
             $env:PATH = "$nsis;$env:PATH"
           }
+          New-Item -ItemType Directory -Force dist | Out-Null
           makensis /WX "/DVERSION=$env:VERSION" installer\installer.nsi
           if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
           Copy-Item target\release\data-traffic-manager.exe "dist\data-traffic-manager-$env:VERSION-portable-x64.exe"
